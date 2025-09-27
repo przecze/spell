@@ -1,0 +1,28 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./checkpoints:/checkpoints:ro
+      - ./backend:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+      # - DISABLE_ONNX=true  # Uncomment to use PyTorch instead of ONNX
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+networks:
+  default:
+    driver: bridge

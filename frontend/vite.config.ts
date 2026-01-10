@@ -7,6 +7,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 3000,
+    allowedHosts: ['spell.janczechowski.com'],
     proxy: {
       '/predict': 'http://backend:8000',
       '/health': 'http://backend:8000'

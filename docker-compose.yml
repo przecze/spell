@@ -1,28 +1,50 @@
 services:
   backend:
     build: ./backend
-    ports:
-      - "127.0.0.1:8000:8000"
     volumes:
       - ./checkpoints:/checkpoints:ro
       - ./backend:/app
     environment:
       - PYTHONUNBUFFERED=1
       # - DISABLE_ONNX=true  # Uncomment to use PyTorch instead of ONNX
+    networks:
+      - localnet
+    # ports:
+    #   - 127.0.0.1:8000:8000  # Uncomment for local debug
+    restart: always
 
   frontend:
     build: ./frontend
-    ports:
-      - "127.0.0.1:3000:3000"
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
       - ./frontend/vite.config.ts:/app/vite.config.ts
     environment:
-      - VITE_API_URL=http://localhost:8000
+      - VITE_API_URL=  # Empty = use relative URLs (same origin via nginx)
+    networks:
+      - localnet
+    # ports:
+    #   - 127.0.0.1:3000:3000  # Uncomment for local debug
+    restart: always
+
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    environment:
+      VIRTUAL_HOST: spell.janczechowski.com
+      LETSENCRYPT_HOST: spell.janczechowski.com
+    networks:
+      - localnet
+      - nginx-proxy
+    # ports:
+    #   - 127.0.0.1:3080:80  # Uncomment for local debug
     depends_on:
       - backend
+      - frontend
+    restart: always
 
 networks:
-  default:
-    driver: bridge
+  localnet:
+  nginx-proxy:
+    external: true

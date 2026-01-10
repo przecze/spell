@@ -40,5 +40,3 @@ df['edit_type'] = (df.target.str.len() - df.source.str.len()).map({1: 'insertion
 print(df.edit_type.value_counts(normalize=True))
 df['edited_word'] = df.progress_apply(lambda row: get_edited_word(row['source'], row['target']), axis=1)
 print(df.edited_word.value_counts(normalize=True))
-
-# train a tiny t5 model to predict 'target' from 'source'. ofc start with training a tokenizer and tokenizing and separating test data set

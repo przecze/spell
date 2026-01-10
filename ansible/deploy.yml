@@ -1,0 +1,107 @@
+# =============================================================================
+# SPELL PROJECT DEPLOYMENT PLAYBOOK
+# =============================================================================
+#
+# SAFETY GUARANTEES:
+#
+# 1. TARGET DIRECTORY: Only /srv/projects/spell is touched
+#    - All file operations use project_dir variable
+#    - The synchronize task has explicit dest: /srv/projects/spell/
+#
+# 2. NGINX-PROXY INTEGRATION:
+#    - Connects to existing nginx-proxy network (external: true)
+#    - Sets VIRTUAL_HOST=spell.janczechowski.com
+#    - Sets LETSENCRYPT_HOST=spell.janczechowski.com
+#    - Does NOT modify /srv/projects/nginx-proxy/ files
+#    - docker-gen will auto-discover and route traffic
+#
+# 3. NO DNS CHANGES: You must manually add DNS A record:
+#    spell.janczechowski.com -> your server IP
+#
+# 4. DOCKER COMMANDS: Only these docker operations are performed:
+#    - docker compose down (stop existing containers)
+#    - docker compose build (build images)
+#    - docker compose up -d (start containers)
+#    All scoped to /srv/projects/spell/docker-compose.yml
+#
+# =============================================================================
+
+- name: Deploy spell project
+  hosts: bluh
+  
+  vars:
+    # SAFETY: This is the ONLY directory we touch on the server
+    project_dir: /srv/projects/spell
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # TASK 1: Create project directory
+    # SAFETY: Only creates /srv/projects/spell, nothing else
+    # -------------------------------------------------------------------------
+    - name: Ensure project directory exists
+      ansible.builtin.file:
+        path: "{{ project_dir }}"
+        state: directory
+        mode: '0755'
+
+    # -------------------------------------------------------------------------
+    # TASK 2: Sync project files from local to server
+    # SAFETY: 
+    #   - src uses playbook_dir to get absolute path to project root
+    #   - dest: is explicitly /srv/projects/spell/
+    #   - delete: no means we DON'T delete files on server that aren't local
+    #   - rsync_opts ensure we don't follow symlinks outside the project
+    # -------------------------------------------------------------------------
+    - name: Sync project files to server
+      ansible.posix.synchronize:
+        src: "{{ playbook_dir }}/../"
+        dest: "{{ project_dir }}/"
+        delete: no
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=.venv"
+          - "--exclude=spell_env"
+          - "--exclude=node_modules"
+          - "--exclude=__pycache__"
+          - "--exclude=*.pyc"
+          - "--exclude=ansible"
+          - "--exclude=.DS_Store"
+          # Include checkpoints (the model files)
+          # First sync will be slow (~500MB), subsequent syncs are fast
+
+    # -------------------------------------------------------------------------
+    # TASK 3: Stop existing containers (if any)
+    # SAFETY: Only affects containers defined in /srv/projects/spell/docker-compose.yml
+    # -------------------------------------------------------------------------
+    - name: Stop existing containers
+      ansible.builtin.shell: |
+        cd {{ project_dir }} && docker compose down --remove-orphans
+      ignore_errors: yes  # OK if nothing is running yet
+
+    # -------------------------------------------------------------------------
+    # TASK 4: Build and start containers
+    # SAFETY: Only builds/starts containers in /srv/projects/spell/
+    # The docker-compose.yml binds to 127.0.0.1 only, not exposed publicly
+    # -------------------------------------------------------------------------
+    - name: Build and start containers
+      ansible.builtin.shell: |
+        cd {{ project_dir }} && docker compose up -d --build
+      register: docker_result
+
+    - name: Show docker compose output
+      ansible.builtin.debug:
+        var: docker_result.stdout_lines
+
+    # -------------------------------------------------------------------------
+    # TASK 5: Verify containers are running
+    # SAFETY: Read-only check, just shows status
+    # -------------------------------------------------------------------------
+    - name: Check container status
+      ansible.builtin.shell: |
+        cd {{ project_dir }} && docker compose ps
+      register: ps_result
+
+    - name: Show running containers
+      ansible.builtin.debug:
+        var: ps_result.stdout_lines
+

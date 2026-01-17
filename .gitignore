@@ -89,5 +89,8 @@ logs/
 *.temp
 .cache/
 
+# HuggingFace cache
+hf_cache/
+
 # api key
 comet_api_key

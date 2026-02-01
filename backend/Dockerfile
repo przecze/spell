@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install dependencies
 COPY requirements.txt .
-RUN pip install "uv==0.8.22" && uv pip install --system --no-cache-dir -r requirements.txt
+RUN pip install "uv==0.9.28" && uv pip install --system --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .

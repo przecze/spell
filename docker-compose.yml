@@ -6,7 +6,7 @@ services:
       - ./backend:/app
     environment:
       - PYTHONUNBUFFERED=1
-      # - DISABLE_ONNX=true  # Uncomment to use PyTorch instead of ONNX
+      # - DISABLE_ONNX=true
     networks:
       - localnet
     # ports:

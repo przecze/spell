@@ -142,12 +142,6 @@ function App() {
           </div>
         </div>
 
-        {isPending && (
-          <div className="loading">
-            Analyzing tokens...
-          </div>
-        )}
-
         {error && (
           <div className="error">
             Error: {error}
@@ -155,7 +149,12 @@ function App() {
         )}
 
         {results && (
-          <div className="results-section">
+          <div className={`results-section ${isPending ? 'loading' : ''}`}>
+            {isPending && (
+              <div className="loading-overlay">
+                <div className="spinner"></div>
+              </div>
+            )}
             <div className="stats">
               <span>Model: {results.model_type.toUpperCase()}</span>
               <span>Inference: {results.inference_time_ms.toFixed(1)}ms</span>

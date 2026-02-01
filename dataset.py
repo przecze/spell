@@ -277,7 +277,7 @@ fig.update_layout(
     yaxis=dict(showticklabels=False),
     annotations=annotations,
 )
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, width='stretch')
 st.caption("💡 Category \"-1\" is hardly visible on this chart because it's only 14 examples in the whole dataset.")
 
 col1, col2 = st.columns(2)

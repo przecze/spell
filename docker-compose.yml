@@ -32,20 +32,21 @@ services:
     restart: unless-stopped
 
   dataset:
-    image: python:3.13-slim
+    image: python:3.14-slim
     working_dir: /app
     command: >
-      bash -c "pip install uv && 
-      uv pip install --system --no-cache-dir streamlit pandas python-Levenshtein datasets plotly &&
+      bash -c "pip install 'uv>=0.9.28' &&
+      uv pip install --system --no-cache-dir -r requirements.txt &&
       streamlit run dataset.py
       --server.port=8501
       --server.address=0.0.0.0
       --server.baseUrlPath=/dataset
-      --server.enableCORS=false
-      --server.enableXsrfProtection=false"
+      --server.enableXsrfProtection=true
+      --browser.gatherUsageStats=false"
     volumes:
       - ./hf_cache:/root/.cache/huggingface
       - ./dataset.py:/app/dataset.py:ro
+      - ./dataset/requirements.txt:/app/requirements.txt:ro
     networks:
       - localnet
     restart: always

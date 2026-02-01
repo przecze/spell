@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import './App.css';
 
 interface TokenResult {
@@ -19,51 +19,43 @@ interface InferenceResponse {
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? '';
 
 function App() {
-  const [text, setText] = useState<string>('');
+  const [text, setText] = useState('');
   const [results, setResults] = useState<InferenceResponse | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  const predict = useCallback(async (inputText: string) => {
-    if (!inputText.trim()) {
-      setResults(null);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const response = await fetch(`${API_BASE_URL}/predict`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ text: inputText }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data: InferenceResponse = await response.json();
-      setResults(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-      setResults(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // Debounced predict function
+  // Debounced predict with useTransition for smooth loading states
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      predict(text);
-    }, 300); // 300ms delay
+      if (!text.trim()) {
+        setResults(null);
+        return;
+      }
+
+      startTransition(async () => {
+        setError(null);
+        try {
+          const response = await fetch(`${API_BASE_URL}/predict`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const data: InferenceResponse = await response.json();
+          setResults(data);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'An error occurred');
+          setResults(null);
+        }
+      });
+    }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [text, predict]);
+  }, [text]);
 
   const getTokenStyle = (probability: number, token: string) => {
     // Skip special tokens
@@ -150,7 +142,7 @@ function App() {
           </div>
         </div>
 
-        {loading && (
+        {isPending && (
           <div className="loading">
             Analyzing tokens...
           </div>

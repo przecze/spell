@@ -90,6 +90,12 @@ http {
 
     # Dataset Streamlit app
     location /dataset/ {
+      # Streamlit requires relaxed CSP for inline scripts/styles and telemetry
+      add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' https://webhooks.fivetran.com https://data.streamlit.io wss://$host; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" always;
+      add_header X-Frame-Options "DENY" always;
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
       proxy_pass http://dataset/dataset/;
       proxy_set_header Host $host;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

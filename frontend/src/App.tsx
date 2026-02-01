@@ -91,6 +91,7 @@ function App() {
       <header className="App-header">
         <h1>Token Classification Demo</h1>
         <p>Type text to see token-level spell correction probabilities</p>
+        <a href="/dataset" className="dataset-link">Learn about the training dataset</a>
       </header>
 
       <main className="main-content">

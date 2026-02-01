@@ -85,7 +85,7 @@
     # -------------------------------------------------------------------------
     - name: Build and start containers
       ansible.builtin.shell: |
-        cd {{ project_dir }} && docker compose up -d --build
+        cd {{ project_dir }} && docker compose --profile production up -d --build backend dataset site
       register: docker_result
 
     - name: Show docker compose output

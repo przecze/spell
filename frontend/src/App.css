@@ -24,6 +24,18 @@
   font-size: 1.1em;
 }
 
+.dataset-link {
+  display: inline-block;
+  margin-top: 10px;
+  color: #007bff;
+  text-decoration: none;
+  font-size: 0.95em;
+}
+
+.dataset-link:hover {
+  text-decoration: underline;
+}
+
 .main-content {
   max-width: 900px;
   margin: 0 auto;

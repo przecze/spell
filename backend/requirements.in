@@ -4,4 +4,4 @@ torch
 transformers
 python-multipart
 pydantic
-optimum[onnxruntime]
+optimum-onnx[onnxruntime]

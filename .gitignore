@@ -78,7 +78,7 @@ frontend/yarn-error.log*
 frontend/.eslintcache
 
 # Docker
-.dockerignore
+# (nothing to ignore here)
 
 # Logs
 *.log

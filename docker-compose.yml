@@ -14,18 +14,22 @@ services:
     restart: always
 
   frontend:
-    build: ./frontend
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      target: development
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
       - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - ./frontend/package.json:/app/package.json
+      - /app/node_modules
     environment:
-      - VITE_API_URL=  # Empty = use relative URLs (same origin via nginx)
+      - NODE_ENV=development
     networks:
       - localnet
-    # ports:
-    #   - 127.0.0.1:3000:3000  # Uncomment for local debug
-    restart: always
+    restart: unless-stopped
 
   dataset:
     image: python:3.13-slim
@@ -49,20 +53,44 @@ services:
   nginx:
     image: nginx:alpine
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+      - ./nginx/html:/usr/share/nginx/html:ro
     environment:
-      VIRTUAL_HOST: spell.janczechowski.com
-      LETSENCRYPT_HOST: spell.janczechowski.com
+      DEV_MODE: "true"
+      NGINX_ENVSUBST_FILTER: DEV_MODE
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
     networks:
       - localnet
-      - nginx-proxy
-    ports:
-      - 127.0.0.1:3080:80  # Uncomment for local debug
     depends_on:
       - backend
       - frontend
       - dataset
+    ports:
+      - 127.0.0.1:3080:80
+    restart: unless-stopped
+
+  # Production: self-contained nginx with built frontend
+  site:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      target: production
+    networks:
+      - localnet
+      - nginx-proxy
+    #ports: ["127.0.0.1:80:80"]
+    environment:
+      VIRTUAL_HOST: spell.janczechowski.com
+      LETSENCRYPT_HOST: spell.janczechowski.com
+      DEV_MODE: "false"
+      NGINX_ENVSUBST_FILTER: DEV_MODE
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
+    depends_on:
+      - backend
+      - dataset
     restart: always
+    profiles:
+      - production
 
 networks:
   localnet:

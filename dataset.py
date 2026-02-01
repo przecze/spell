@@ -376,3 +376,33 @@ st.write(f"""
 | After Fluency filter | {len(df_fluency):,} |
 | After edit_distance=1 filter | {len(df_final):,} |
 """)
+
+# Download buttons
+st.subheader("Download Dataset")
+df_export = df_final[['source', 'target', 'edit_type']].copy()
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    csv_data = df_export.to_csv(index=False)
+    st.download_button(
+        label="📄 CSV",
+        data=csv_data,
+        file_name="wiki_edits_ed1.csv",
+        mime="text/csv",
+    )
+with col2:
+    parquet_data = df_export.to_parquet(index=False)
+    st.download_button(
+        label="📦 Parquet",
+        data=parquet_data,
+        file_name="wiki_edits_ed1.parquet",
+        mime="application/octet-stream",
+    )
+with col3:
+    json_data = df_export.to_json(orient='records', indent=2)
+    st.download_button(
+        label="📋 JSON",
+        data=json_data,
+        file_name="wiki_edits_ed1.json",
+        mime="application/json",
+    )

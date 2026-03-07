@@ -31,25 +31,47 @@ services:
       - localnet
     restart: unless-stopped
 
-  dataset:
-    image: python:3.14-slim
-    working_dir: /app
-    command: >
-      bash -c "pip install 'uv>=0.9.28' &&
-      uv pip install --system --no-cache-dir -r requirements.txt &&
-      streamlit run dataset.py
-      --server.port=8501
-      --server.address=0.0.0.0
-      --server.baseUrlPath=/dataset
-      --server.enableXsrfProtection=true
-      --browser.gatherUsageStats=false"
+  dataset-gateway:
+    image: nginx:alpine
+    entrypoint: ["sh", "/entrypoint.sh"]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
     volumes:
-      - ./hf_cache:/root/.cache/huggingface
-      - ./dataset.py:/app/dataset.py:ro
-      - ./dataset/requirements.txt:/app/requirements.txt:ro
+      - ./flyio/dataset/entrypoint.gateway.sh:/entrypoint.sh:ro
+      - ./flyio/dataset/gateway.conf:/etc/wireguard/gateway.conf:ro
+      - ./flyio/dataset/nginx-gateway.conf:/etc/nginx/templates/default.conf:ro
+      - ./flyio/dataset/activity/:/activity
     networks:
       - localnet
-    restart: always
+    restart: unless-stopped
+    profiles:
+      - production
+
+  dataset-suspender:
+    image: alpine:3.19
+    command: ["sh", "/suspender.sh"]
+    volumes:
+      - ./flyio/dataset/suspender.sh:/suspender.sh:ro
+      - ./flyio/dataset/notify.sh:/notify.sh:ro
+      - ./flyio/dataset/activity:/activity
+    secrets:
+      - fly_token
+    environment:
+      - FLY_APP_NAME=dataset-spell-jan-czechowski-com
+      - MOST_RECENT_CALL_CHECK_FREQUENCY_S=10
+      - MOST_RECENT_CALL_MAX_AGE_S=300
+      - MACHINES_STATE_MAX_AGE_S=900
+      - MACHINE_STARTED_MAX_NOTIFY_S=1800
+      - NTFY_TOPIC
+      - NTFY_EMAIL
+    networks:
+      - localnet
+    restart: unless-stopped
+    profiles:
+      - production
 
   nginx:
     image: nginx:alpine
@@ -65,7 +87,6 @@ services:
     depends_on:
       - backend
       - frontend
-      - dataset
     ports:
       - 127.0.0.1:3080:80
     restart: unless-stopped
@@ -79,7 +100,7 @@ services:
     networks:
       - localnet
       - nginx-proxy
-    #ports: ["127.0.0.1:80:80"]
+    #ports: ["127.0.0.1:80:80"]  # Only for local testing - nginx-proxy handles routing in prod
     environment:
       VIRTUAL_HOST: spell.janczechowski.com
       LETSENCRYPT_HOST: spell.janczechowski.com
@@ -88,10 +109,14 @@ services:
       NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
     depends_on:
       - backend
-      - dataset
+      - dataset-gateway
     restart: always
     profiles:
       - production
+
+secrets:
+  fly_token:
+    file: ./flyio/dataset/flyio_token_gateway.txt
 
 networks:
   localnet:

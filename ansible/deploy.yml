@@ -24,6 +24,14 @@
 #    - docker compose up -d (start containers)
 #    All scoped to /srv/projects/spell/docker-compose.yml
 #
+# 5. DATASET EXPLORER (Fly.io):
+#    - The dataset explorer runs on Fly.io (dataset-spell-jan-czechowski-com)
+#    - dataset-gateway: WireGuard tunnel to Fly.io Flycast
+#    - dataset-suspender: Monitors idle and suspends Fly machines
+#    - MANUAL SETUP REQUIRED before first deploy:
+#      1. scp flyio/dataset/flyio_token_gateway.txt to server
+#      2. Run: cd /srv/projects/spell/flyio/dataset && make wg-create
+#
 # =============================================================================
 
 - name: Deploy spell project
@@ -45,8 +53,26 @@
         mode: '0755'
 
     # -------------------------------------------------------------------------
-    # TASK 2: Sync project files from local to server
-    # SAFETY: 
+    # TASK 2: Pre-flight check - ensure Fly.io token exists on server
+    # SAFETY: Read-only check, fails early if manual setup not done
+    # -------------------------------------------------------------------------
+    - name: Check Fly.io token file exists
+      ansible.builtin.stat:
+        path: "{{ project_dir }}/flyio/dataset/flyio_token_gateway.txt"
+      register: fly_token_stat
+
+    - name: Warn if Fly.io token missing
+      ansible.builtin.debug:
+        msg: |
+          WARNING: Fly.io token not found at {{ project_dir }}/flyio/dataset/flyio_token_gateway.txt
+          Dataset gateway will NOT work until you:
+          1. scp flyio/dataset/flyio_token_gateway.txt to the server
+          2. Run: cd {{ project_dir }}/flyio/dataset && make wg-create
+      when: not fly_token_stat.stat.exists
+
+    # -------------------------------------------------------------------------
+    # TASK 3: Sync project files from local to server
+    # SAFETY:
     #   - src uses playbook_dir to get absolute path to project root
     #   - dest: is explicitly /srv/projects/spell/
     #   - delete: no means we DON'T delete files on server that aren't local
@@ -66,26 +92,41 @@
           - "--exclude=*.pyc"
           - "--exclude=ansible"
           - "--exclude=.DS_Store"
+          - "--exclude=hf_cache"
+          # Fly.io gateway secrets (manually managed on server)
+          - "--exclude=flyio/dataset/flyio_token_gateway.txt"
+          - "--exclude=flyio/dataset/gateway.conf"
+          - "--exclude=flyio/dataset/activity"
           # Include checkpoints (the model files)
           # First sync will be slow (~500MB), subsequent syncs are fast
 
     # -------------------------------------------------------------------------
-    # TASK 3: Stop existing containers (if any)
+    # TASK 4: Ensure Fly.io gateway activity directory exists
+    # SAFETY: Only creates directory for gateway/suspender communication
+    # -------------------------------------------------------------------------
+    - name: Ensure Fly.io activity directory exists
+      ansible.builtin.file:
+        path: "{{ project_dir }}/flyio/dataset/activity"
+        state: directory
+        mode: '0755'
+
+    # -------------------------------------------------------------------------
+    # TASK 5: Stop existing containers (if any)
     # SAFETY: Only affects containers defined in /srv/projects/spell/docker-compose.yml
     # -------------------------------------------------------------------------
     - name: Stop existing containers
       ansible.builtin.shell: |
-        cd {{ project_dir }} && docker compose down --remove-orphans
+        cd {{ project_dir }} && docker compose --profile production down --remove-orphans
       ignore_errors: yes  # OK if nothing is running yet
 
     # -------------------------------------------------------------------------
-    # TASK 4: Build and start containers
+    # TASK 6: Build and start containers
     # SAFETY: Only builds/starts containers in /srv/projects/spell/
     # The docker-compose.yml binds to 127.0.0.1 only, not exposed publicly
     # -------------------------------------------------------------------------
     - name: Build and start containers
       ansible.builtin.shell: |
-        cd {{ project_dir }} && docker compose --profile production up -d --build backend dataset site
+        cd {{ project_dir }} && docker compose --profile production up -d --build backend dataset-gateway dataset-suspender site
       register: docker_result
 
     - name: Show docker compose output
@@ -93,7 +134,7 @@
         var: docker_result.stdout_lines
 
     # -------------------------------------------------------------------------
-    # TASK 5: Verify containers are running
+    # TASK 7: Verify containers are running
     # SAFETY: Read-only check, just shows status
     # -------------------------------------------------------------------------
     - name: Check container status

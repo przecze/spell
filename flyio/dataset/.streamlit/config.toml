@@ -1,0 +1,10 @@
+[client]
+showErrorDetails = false
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
+
+[server]
+enableXsrfProtection = false
+enableCORS = false

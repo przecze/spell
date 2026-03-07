@@ -29,8 +29,8 @@
 #    - dataset-gateway: WireGuard tunnel to Fly.io Flycast
 #    - dataset-suspender: Monitors idle and suspends Fly machines
 #    - MANUAL SETUP REQUIRED before first deploy:
-#      1. scp flyio/dataset/flyio_token_gateway.txt to server
-#      2. Run: cd /srv/projects/spell/flyio/dataset && make wg-create
+#      1. scp dataset/flyio_token_gateway.txt to server
+#      2. Run: cd /srv/projects/spell/dataset && make wg-create
 #
 # =============================================================================
 
@@ -58,16 +58,16 @@
     # -------------------------------------------------------------------------
     - name: Check Fly.io token file exists
       ansible.builtin.stat:
-        path: "{{ project_dir }}/flyio/dataset/flyio_token_gateway.txt"
+        path: "{{ project_dir }}/dataset/flyio_token_gateway.txt"
       register: fly_token_stat
 
     - name: Warn if Fly.io token missing
       ansible.builtin.debug:
         msg: |
-          WARNING: Fly.io token not found at {{ project_dir }}/flyio/dataset/flyio_token_gateway.txt
+          WARNING: Fly.io token not found at {{ project_dir }}/dataset/flyio_token_gateway.txt
           Dataset gateway will NOT work until you:
-          1. scp flyio/dataset/flyio_token_gateway.txt to the server
-          2. Run: cd {{ project_dir }}/flyio/dataset && make wg-create
+          1. scp dataset/flyio_token_gateway.txt to the server
+          2. Run: cd {{ project_dir }}/dataset && make wg-create
       when: not fly_token_stat.stat.exists
 
     # -------------------------------------------------------------------------
@@ -94,9 +94,9 @@
           - "--exclude=.DS_Store"
           - "--exclude=hf_cache"
           # Fly.io gateway secrets (manually managed on server)
-          - "--exclude=flyio/dataset/flyio_token_gateway.txt"
-          - "--exclude=flyio/dataset/gateway.conf"
-          - "--exclude=flyio/dataset/activity"
+          - "--exclude=dataset/flyio_token_gateway.txt"
+          - "--exclude=dataset/gateway.conf"
+          - "--exclude=dataset/activity"
           # Include checkpoints (the model files)
           # First sync will be slow (~500MB), subsequent syncs are fast
 
@@ -106,7 +106,7 @@
     # -------------------------------------------------------------------------
     - name: Ensure Fly.io activity directory exists
       ansible.builtin.file:
-        path: "{{ project_dir }}/flyio/dataset/activity"
+        path: "{{ project_dir }}/dataset/activity"
         state: directory
         mode: '0755'
 

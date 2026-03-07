@@ -40,10 +40,10 @@ services:
       - NET_RAW
       - NET_ADMIN
     volumes:
-      - ./flyio/dataset/entrypoint.gateway.sh:/entrypoint.sh:ro
-      - ./flyio/dataset/gateway.conf:/etc/wireguard/gateway.conf:ro
-      - ./flyio/dataset/nginx-gateway.conf:/etc/nginx/templates/default.conf:ro
-      - ./flyio/dataset/activity/:/activity
+      - ./dataset/entrypoint.gateway.sh:/entrypoint.sh:ro
+      - ./dataset/gateway.conf:/etc/wireguard/gateway.conf:ro
+      - ./dataset/nginx-gateway.conf:/etc/nginx/templates/default.conf:ro
+      - ./dataset/activity/:/activity
     networks:
       - localnet
     restart: unless-stopped
@@ -54,9 +54,9 @@ services:
     image: alpine:3.19
     command: ["sh", "/suspender.sh"]
     volumes:
-      - ./flyio/dataset/suspender.sh:/suspender.sh:ro
-      - ./flyio/dataset/notify.sh:/notify.sh:ro
-      - ./flyio/dataset/activity:/activity
+      - ./dataset/suspender.sh:/suspender.sh:ro
+      - ./dataset/notify.sh:/notify.sh:ro
+      - ./dataset/activity:/activity
     secrets:
       - fly_token
     environment:
@@ -116,7 +116,7 @@ services:
 
 secrets:
   fly_token:
-    file: ./flyio/dataset/flyio_token_gateway.txt
+    file: ./dataset/flyio_token_gateway.txt
 
 networks:
   localnet:

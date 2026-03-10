@@ -6,8 +6,8 @@ apk add --no-cache curl jq
 FLY_API_TOKEN=$(cat /run/secrets/fly_token)
 API="https://api.machines.dev/v1/apps/${FLY_APP_NAME}/machines"
 AUTH="Authorization: Bearer ${FLY_API_TOKEN}"
-MACHINES_CACHE="/activity/machines_state.json"
-JUST_SUSPENDED="/activity/just_suspended"
+MACHINES_CACHE="/activity/${FLY_APP_NAME}_machines_state.json"
+JUST_SUSPENDED="/activity/${FLY_APP_NAME}_just_suspended"
 
 MOST_RECENT_CALL_CHECK_FREQUENCY_S=${MOST_RECENT_CALL_CHECK_FREQUENCY_S:-5}
 MOST_RECENT_CALL_MAX_AGE_S=${MOST_RECENT_CALL_MAX_AGE_S:-60}
@@ -45,14 +45,14 @@ while true; do
       start_s=$((start_ts / 1000))
       uptime_s=$((loop_now - start_s))
       if [ "${uptime_s}" -gt "${MACHINE_STARTED_MAX_NOTIFY_S}" ]; then
-        notified_file="/activity/notified_${mid}"
+        notified_file="/activity/${FLY_APP_NAME}_notified_${mid}"
         if [ -f "${notified_file}" ]; then
           prev_start_ts=$(cat "${notified_file}" 2>/dev/null)
           [ "${prev_start_ts}" = "${start_ts}" ] && continue
         fi
         started_at=$(TZ=Europe/Warsaw date -d "@${start_s}" '+%Y-%m-%d %H:%M:%S %Z')
         echo "debug: sending notify for machine ${mname} (${mid}), uptime ${uptime_s}s > ${MACHINE_STARTED_MAX_NOTIFY_S}s"
-        /notify.sh "Dataset: machine ${mname} running >${MACHINE_STARTED_MAX_NOTIFY_S}s" "Machine ${mname} (${mid}) started at ${started_at}, running for ${uptime_s} seconds. Consider suspending to save costs."
+        /notify.sh "${FLY_APP_NAME}: machine ${mname} running >${MACHINE_STARTED_MAX_NOTIFY_S}s" "Machine ${mname} (${mid}) started at ${started_at}, running for ${uptime_s} seconds. Consider suspending to save costs."
         echo "${start_ts}" > "${notified_file}"
       fi
     done

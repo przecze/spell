@@ -3,3 +3,8 @@
 **/.gitignore
 **/.env
 **/*.log
+**/__pycache__
+.venv/
+spell_env/
+hf_cache/
+ansible/

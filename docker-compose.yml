@@ -1,9 +1,14 @@
 services:
+  # ── Local dev ──────────────────────────────────────────────────────────────
+
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     volumes:
       - ./checkpoints:/checkpoints:ro
-      - ./backend:/app
+      - ./api:/app
     environment:
       - PYTHONUNBUFFERED=1
       # - DISABLE_ONNX=true
@@ -31,26 +36,83 @@ services:
       - localnet
     restart: unless-stopped
 
-  dataset-gateway:
+  nginx:
     image: nginx:alpine
-    entrypoint: ["sh", "/entrypoint.sh"]
+    volumes:
+      # Mounted as default.conf.template so nginx image processes it into conf.d/default.conf,
+      # replacing the built-in default server block.
+      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./nginx/html:/usr/share/nginx/html:ro
+    environment:
+      NGINX_ENVSUBST_FILTER: "^(RESOLVER|BACKEND_HOST|DATASET_HOST|VITE_UPSTREAM|ACTIVITY_LOG|FRONTEND_CSP)$"
+      RESOLVER: "127.0.0.11 ipv6=off valid=30s"
+      BACKEND_HOST: "backend:8000"
+      DATASET_HOST: "dataset-spell-jan-czechowski-com.flycast"
+      VITE_UPSTREAM: "frontend:3000"
+      ACTIVITY_LOG: "/dev/null"
+      FRONTEND_CSP: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';"
+    networks:
+      - localnet
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - 127.0.0.1:3080:80
+    restart: unless-stopped
+
+  # ── Production ─────────────────────────────────────────────────────────────
+  # Only two gateway + two suspender containers.
+  # API runs on fly/api (Python 3.13), dataset on fly/dataset (Python 3.12).
+
+  # Serves built frontend + WireGuard tunnel to Fly.
+  # Proxies /predict to api-spell-jan-czechowski-com and /dataset/ to
+  # dataset-spell-jan-czechowski-com; static assets served locally.
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
     devices:
       - /dev/net/tun:/dev/net/tun
     cap_add:
       - NET_RAW
       - NET_ADMIN
     volumes:
-      - ./dataset/entrypoint.gateway.sh:/entrypoint.sh:ro
       - ./dataset/gateway.conf:/etc/wireguard/gateway.conf:ro
-      - ./dataset/nginx-gateway.conf:/etc/nginx/templates/default.conf:ro
       - ./dataset/activity/:/activity
+    environment:
+      VIRTUAL_HOST: spell.janczechowski.com
+      LETSENCRYPT_HOST: spell.janczechowski.com
+    ports:
+      - 127.0.0.1:3080:80
     networks:
-      - localnet
+      - nginx-proxy
+    restart: always
+    profiles:
+      - production
+
+  suspender-api:
+    image: alpine:3.19
+    command: ["sh", "/suspender.sh"]
+    volumes:
+      - ./dataset/suspender.sh:/suspender.sh:ro
+      - ./dataset/notify.sh:/notify.sh:ro
+      - ./dataset/activity:/activity
+    secrets:
+      - source: fly_token_api
+        target: fly_token
+    environment:
+      - FLY_APP_NAME=api-spell-jan-czechowski-com
+      - MOST_RECENT_CALL_CHECK_FREQUENCY_S=10
+      - MOST_RECENT_CALL_MAX_AGE_S=300
+      - MACHINES_STATE_MAX_AGE_S=900
+      - MACHINE_STARTED_MAX_NOTIFY_S=1800
+      - NTFY_TOPIC
+      - NTFY_EMAIL
     restart: unless-stopped
     profiles:
       - production
 
-  dataset-suspender:
+  suspender-dataset:
     image: alpine:3.19
     command: ["sh", "/suspender.sh"]
     volumes:
@@ -67,56 +129,15 @@ services:
       - MACHINE_STARTED_MAX_NOTIFY_S=1800
       - NTFY_TOPIC
       - NTFY_EMAIL
-    networks:
-      - localnet
     restart: unless-stopped
-    profiles:
-      - production
-
-  nginx:
-    image: nginx:alpine
-    volumes:
-      - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
-      - ./nginx/html:/usr/share/nginx/html:ro
-    environment:
-      DEV_MODE: "true"
-      NGINX_ENVSUBST_FILTER: DEV_MODE
-      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
-    networks:
-      - localnet
-    depends_on:
-      - backend
-      - frontend
-    ports:
-      - 127.0.0.1:3080:80
-    restart: unless-stopped
-
-  # Production: self-contained nginx with built frontend
-  site:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-      target: production
-    networks:
-      - localnet
-      - nginx-proxy
-    #ports: ["127.0.0.1:80:80"]  # Only for local testing - nginx-proxy handles routing in prod
-    environment:
-      VIRTUAL_HOST: spell.janczechowski.com
-      LETSENCRYPT_HOST: spell.janczechowski.com
-      DEV_MODE: "false"
-      NGINX_ENVSUBST_FILTER: DEV_MODE
-      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
-    depends_on:
-      - backend
-      - dataset-gateway
-    restart: always
     profiles:
       - production
 
 secrets:
   fly_token:
     file: ./dataset/flyio_token_gateway.txt
+  fly_token_api:
+    file: ./api/flyio_token_gateway_api.txt
 
 networks:
   localnet:

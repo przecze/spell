@@ -1,128 +1,113 @@
-# nginx.conf.template - single config for dev and prod
-# Uses DEV_MODE env var to conditionally allow inline scripts/styles
+# nginx.conf.template — unified config for local dev and production gateway
+#
+# Template variables substituted at container startup:
+#   RESOLVER       Full resolver directive value
+#                    dev:  "127.0.0.11 ipv6=off valid=30s"
+#                    prod: "[<fly-dns-ipv6>] valid=30s"
+#   BACKEND_HOST   API upstream host:port
+#                    dev:  "backend:8000"
+#                    prod: "api-spell-jan-czechowski-com.flycast"
+#   DATASET_HOST   Streamlit upstream host
+#                    dev:  "dataset-spell-jan-czechowski-com.flycast" (no tunnel → 502)
+#                    prod: "dataset-spell-jan-czechowski-com.flycast"
+#   VITE_UPSTREAM  Vite dev server (dev: "frontend:3000"; prod: unused — baked frontend
+#                    always satisfies try_files before @vite fallback fires)
+#   ACTIVITY_LOG   Idle-suspension activity log (/dev/null in dev, file path in prod)
+#   FRONTEND_CSP   Content-Security-Policy for the main SPA page
+#                    dev:  includes 'unsafe-inline'/'unsafe-eval' for Vite HMR
+#                    prod: strict
 
-worker_processes auto;
-error_log /var/log/nginx/error.log warn;
-pid /var/run/nginx.pid;
+log_format activity '1';
 
-events {
-  worker_connections 1024;
-}
-
-http {
-  include       /etc/nginx/mime.types;
-  default_type  application/octet-stream;
-  sendfile      on;
-  keepalive_timeout 65;
-  server_names_hash_bucket_size 64;
-
-  map $http_upgrade $connection_upgrade {
+map $http_upgrade $connection_upgrade {
     default upgrade;
     ''      close;
-  }
+}
 
-  # DEV_MODE controls CSP inline permissions
-  map "${DEV_MODE}" $dev_style_inline {
-    default "";
-    "true"  " 'unsafe-inline'";
-    "1"     " 'unsafe-inline'";
-  }
-
-  map "${DEV_MODE}" $dev_script_policy {
-    default "";
-    "true"  " 'unsafe-inline' 'unsafe-eval'";
-    "1"     " 'unsafe-inline' 'unsafe-eval'";
-  }
-
-  upstream backend {
-    server backend:8000;
-  }
-
-  upstream dataset {
-    server dataset-gateway:80;
-  }
-
-  server {
+server {
     listen 80;
+    server_name _;
     server_tokens off;
+
+    resolver ${RESOLVER};
 
     root /usr/share/nginx/html;
     index index.html;
 
-    # --- Security headers ---
+    # Security headers
     add_header X-Frame-Options "DENY" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
     add_header Cross-Origin-Opener-Policy "same-origin" always;
     add_header Cross-Origin-Resource-Policy "same-site" always;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self'${dev_script_policy}; style-src 'self'${dev_style_inline}; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" always;
+    add_header Content-Security-Policy "${FRONTEND_CSP}" always;
 
-    # --- Block common scanner paths ---
+    # Block common scanner paths
     location ~* \.(php|asp|aspx|jsp|cgi|pl|sh|py|rb)$ { return 404; }
+    location ~* ^/(admin|wp-admin|wp-login|administrator|phpmyadmin|\.env|\.git) { return 404; }
 
-    location ~* ^/(admin|wp-admin|wp-login|administrator|phpmyadmin|mysql|sql|backup|config|\.env|\.git) {
-      return 404;
-    }
-
-    # Dev fallback (Vite upstream) - only works when frontend service is running
-    set $vite_upstream frontend:3000;
-    resolver 127.0.0.11 ipv6=off valid=30s;
-
-    location @vite {
-      proxy_pass http://$vite_upstream;
-      proxy_http_version 1.1;
-      proxy_set_header Host $http_host;
-      proxy_set_header X-Real-IP $remote_addr;
-      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-      proxy_set_header X-Forwarded-Proto $scheme;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection $connection_upgrade;
-    }
-
-    # Backend API - /predict endpoint
+    # /predict -> API (local backend in dev, Fly via WireGuard in prod)
     location /predict {
-      proxy_pass http://backend/predict;
-      proxy_set_header Host $host;
-      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-      proxy_set_header X-Forwarded-Proto $scheme;
+        access_log ${ACTIVITY_LOG} activity;
+        set $backend ${BACKEND_HOST};
+        proxy_pass http://$backend/predict;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 30s;
+        proxy_read_timeout 120s;
     }
 
-    # Dataset Streamlit app - proxies to dataset-gateway container (WireGuard tunnel to Fly.io)
+    # /dataset/ -> Streamlit on Fly (via WireGuard in prod; no tunnel in dev = 502)
     location ^~ /dataset/ {
-      # Streamlit requires relaxed CSP for inline scripts/styles and telemetry
-      add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' https://webhooks.fivetran.com https://data.streamlit.io wss://$host; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" always;
-      add_header X-Frame-Options "DENY" always;
-      add_header X-Content-Type-Options "nosniff" always;
-      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        access_log ${ACTIVITY_LOG} activity;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' https://webhooks.fivetran.com https://data.streamlit.io wss://$host; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
-      proxy_pass http://dataset/;
-      proxy_set_header Host $host;
-      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-      proxy_set_header X-Forwarded-Proto $scheme;
-      proxy_http_version 1.1;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection $connection_upgrade;
-      proxy_read_timeout 86400;
+        set $dataset ${DATASET_HOST};
+        proxy_pass http://$dataset$request_uri;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_connect_timeout 30s;
+        proxy_read_timeout 86400;
     }
 
     location = /dataset {
-      return 301 $scheme://$http_host/dataset/;
+        return 301 $scheme://$http_host/dataset/;
     }
 
-    # Allow Vite dev dependencies before catch-all
+    # Vite dev server fallback (dev only).
+    # In prod the baked frontend always satisfies try_files first so @vite is never reached.
+    set $vite_upstream ${VITE_UPSTREAM};
+    location @vite {
+        proxy_pass http://$vite_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+    }
+
     location ^~ /node_modules/ {
-      try_files $uri $uri/ @vite;
+        try_files $uri $uri/ @vite;
     }
 
-    # Root path - try index.html, fallback to Vite
     location = / {
-      try_files /index.html @vite;
+        try_files /index.html @vite;
     }
 
-    # SPA routing - try static files, then fallback to index.html or Vite
     location / {
-      try_files $uri $uri/ /index.html @vite;
+        try_files $uri $uri/ /index.html @vite;
     }
-  }
 }

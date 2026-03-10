@@ -24,13 +24,20 @@
 #    - docker compose up -d (start containers)
 #    All scoped to /srv/projects/spell/docker-compose.yml
 #
-# 5. DATASET EXPLORER (Fly.io):
-#    - The dataset explorer runs on Fly.io (dataset-spell-jan-czechowski-com)
-#    - dataset-gateway: WireGuard tunnel to Fly.io Flycast
-#    - dataset-suspender: Monitors idle and suspends Fly machines
-#    - MANUAL SETUP REQUIRED before first deploy:
-#      1. scp dataset/flyio_token_gateway.txt to server
-#      2. Run: cd /srv/projects/spell/dataset && make wg-create
+# 5. PRODUCTION SHAPE (two local containers + two Fly.io apps):
+#    - gateway: nginx + WireGuard tunnel, serves frontend, proxies to Fly
+#    - suspender-api: monitors idle and suspends api-spell-jan-czechowski-com
+#    - suspender-dataset: monitors idle and suspends dataset-spell-jan-czechowski-com
+#    - API (FastAPI + model) runs on Fly.io: api-spell-jan-czechowski-com
+#    - Dataset (Streamlit) runs on Fly.io: dataset-spell-jan-czechowski-com
+#
+# 6. MANUAL SETUP REQUIRED before first deploy on a new server:
+#    API Fly.io token + WireGuard:
+#      1. scp api/flyio_token_gateway_api.txt server:/srv/projects/spell/api/
+#      2. make api-wg-create  (from project root on the server)
+#    Dataset Fly.io token + WireGuard:
+#      3. scp dataset/flyio_token_gateway.txt server:/srv/projects/spell/dataset/
+#      4. make dataset-wg-create  (from project root on the server)
 #
 # =============================================================================
 
@@ -53,22 +60,36 @@
         mode: '0755'
 
     # -------------------------------------------------------------------------
-    # TASK 2: Pre-flight check - ensure Fly.io token exists on server
+    # TASK 2: Pre-flight check - ensure Fly.io tokens exist on server
     # SAFETY: Read-only check, fails early if manual setup not done
     # -------------------------------------------------------------------------
-    - name: Check Fly.io token file exists
+    - name: Check dataset Fly.io token file exists
       ansible.builtin.stat:
         path: "{{ project_dir }}/dataset/flyio_token_gateway.txt"
-      register: fly_token_stat
+      register: fly_token_dataset_stat
 
-    - name: Warn if Fly.io token missing
+    - name: Warn if dataset Fly.io token missing
       ansible.builtin.debug:
         msg: |
           WARNING: Fly.io token not found at {{ project_dir }}/dataset/flyio_token_gateway.txt
-          Dataset gateway will NOT work until you:
+          suspender-dataset will NOT work until you:
           1. scp dataset/flyio_token_gateway.txt to the server
-          2. Run: cd {{ project_dir }}/dataset && make wg-create
-      when: not fly_token_stat.stat.exists
+          2. Run: make dataset-wg-create (from {{ project_dir }})
+      when: not fly_token_dataset_stat.stat.exists
+
+    - name: Check API Fly.io token file exists
+      ansible.builtin.stat:
+        path: "{{ project_dir }}/api/flyio_token_gateway_api.txt"
+      register: fly_token_api_stat
+
+    - name: Warn if API Fly.io token missing
+      ansible.builtin.debug:
+        msg: |
+          WARNING: Fly.io token not found at {{ project_dir }}/api/flyio_token_gateway_api.txt
+          suspender-api will NOT work until you:
+          1. scp api/flyio_token_gateway_api.txt to the server
+          2. Run: make api-wg-create (from {{ project_dir }})
+      when: not fly_token_api_stat.stat.exists
 
     # -------------------------------------------------------------------------
     # TASK 3: Sync project files from local to server
@@ -93,12 +114,14 @@
           - "--exclude=ansible"
           - "--exclude=.DS_Store"
           - "--exclude=hf_cache"
-          # Fly.io gateway secrets (manually managed on server)
+          # Fly.io secrets + WireGuard configs (manually managed on server)
           - "--exclude=dataset/flyio_token_gateway.txt"
           - "--exclude=dataset/gateway.conf"
           - "--exclude=dataset/activity"
-          # Include checkpoints (the model files)
-          # First sync will be slow (~500MB), subsequent syncs are fast
+          - "--exclude=api/flyio_token_gateway_api.txt"
+          - "--exclude=api/gateway.conf"
+          # Include checkpoints (the model files) — first sync is slow (~500MB)
+          - "--exclude=api_to_flyio_plan.md"
 
     # -------------------------------------------------------------------------
     # TASK 4: Ensure Fly.io gateway activity directory exists
@@ -126,7 +149,7 @@
     # -------------------------------------------------------------------------
     - name: Build and start containers
       ansible.builtin.shell: |
-        cd {{ project_dir }} && docker compose --profile production up -d --build backend dataset-gateway dataset-suspender site
+        cd {{ project_dir }} && docker compose --profile production up -d --build gateway suspender-api suspender-dataset
       register: docker_result
 
     - name: Show docker compose output

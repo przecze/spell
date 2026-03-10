@@ -1,0 +1,26 @@
+# Stage 1: precompute dataset parquet files at build time
+FROM --platform=linux/amd64 python:3.12-slim AS precompute
+
+WORKDIR /app
+
+COPY dataset/requirements.txt .
+RUN pip install uv && uv pip install --system -r requirements.txt
+
+COPY dataset/precompute.py .
+RUN python precompute.py
+
+# Stage 2: runtime
+FROM --platform=linux/amd64 python:3.12-slim
+
+WORKDIR /app
+
+COPY dataset/requirements-runtime.in requirements-runtime.in
+RUN pip install uv && uv pip install --system --no-cache-dir -r requirements-runtime.in
+
+COPY dataset/dataset.py .
+COPY dataset/.streamlit .streamlit/
+COPY --from=precompute /app/data /app/data
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "dataset.py", "--server.port=8501", "--server.address=0.0.0.0"]

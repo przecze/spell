@@ -94,3 +94,8 @@ hf_cache/
 
 # api key
 comet_api_key
+
+
+*/gateway.conf
+*flyio_token_gateway*
+

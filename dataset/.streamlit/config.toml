@@ -8,3 +8,4 @@ gatherUsageStats = false
 [server]
 enableXsrfProtection = false
 enableCORS = false
+baseUrlPath = "dataset"

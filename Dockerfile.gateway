@@ -1,0 +1,29 @@
+# Stage 1: build frontend
+FROM node:24-alpine AS builder
+
+WORKDIR /app
+
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci
+
+COPY frontend/ .
+RUN npm run build
+
+# Stage 2: production gateway — nginx + WireGuard + built frontend
+FROM nginx:alpine
+
+# Bake in WireGuard — no runtime apk installs
+RUN apk add --no-cache wireguard-tools wireguard-go
+
+# Copy built frontend
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Unified nginx config template — variables substituted at startup by entrypoint
+COPY nginx.conf.template /etc/nginx/templates/nginx.conf.template
+
+COPY gateway/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 80
+
+ENTRYPOINT ["/entrypoint.sh"]
